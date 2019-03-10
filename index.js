@@ -321,7 +321,7 @@ const resolvers = {
 
 mongoose.connect('mongodb://julian-blaschke:Julian1999@ds247001.mlab.com:47001/need-a-ticket')
 
-const server = new ApolloServer({ typeDefs, resolvers })
+const server = new ApolloServer({ typeDefs, resolvers, introspection: true, playground: true })
 
 // auth middleware
 const auth = jwt({
