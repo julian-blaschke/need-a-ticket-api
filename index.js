@@ -32,13 +32,14 @@ const typeDefs = gql`
     date: Date!,
     address: String!,
     capacity: Float!,
-    Tickets: [String],
+    tickets: [Ticket],
     artist: Artist,
   }
   type Ticket {
     _id: ID!,
     type: String!,
     price: Float!,
+    redeemed: Boolean!,
     redeemedAt: Date,
     seller: User!,
     buyer: User,
@@ -56,6 +57,12 @@ const typeDefs = gql`
     receiver: User!,
     ticket: Ticket!,
   }
+    type groupedTicket{
+    concert: Concert!, 
+    price: Float!,
+    seller: User!,
+    available: Float!
+  }
   type Query {
     users:[User],
     user(id: ID!): User,
@@ -64,6 +71,7 @@ const typeDefs = gql`
     concerts: [Concert],
     concert(id: ID!): Concert,
     tickets: [Ticket],
+    ticketsGrouped: [groupedTicket],
     ticket(id: ID!): Ticket,
     transactions: [Transaction],
     transaction(id: ID!): Transaction,
@@ -74,7 +82,9 @@ const typeDefs = gql`
     createArtist (name: String!): Artist
     createConcert (title: String!, date: Date!, address: String!, capacity: Float!, artistId: ID!): Concert
     createTicket (type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): Ticket
+    createTickets (amount: Float!, type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
     buy (ticketId: ID!, payerId: ID!): Transaction
+    buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!, payerId: ID!): Transaction 
     deposit (amount: Float!, userId: ID!): Wallet
   }
 `
@@ -114,6 +124,7 @@ const resolvers = {
       let concert = await Concert.aggregate([
         {$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
         {$unwind: "$artist"},
+        {$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }},
         {$match : {_id : Types.ObjectId(id)}},
         {$limit : 1}
       ])
@@ -123,7 +134,8 @@ const resolvers = {
     async concerts(){
       return Concert.aggregate([
         {$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
-        {$unwind: "$artist"}
+        {$unwind: "$artist"},
+        {$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }}
         ])
     },
 
@@ -150,6 +162,19 @@ const resolvers = {
         {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
         {$unwind: "$concert"},
       ])
+    },
+
+    async ticketsGrouped(){
+      let tickets =  await Ticket.aggregate([
+        {$match: {redeemed: false} },
+        {$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price' }, count: {$sum: 1}}},
+        {$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
+        {$unwind: "$seller"},
+        {$lookup: { from: 'concerts',localField:'_id.concertId',foreignField: '_id',as: 'concert'}},
+        {$unwind: "$concert"},
+        {$project: {concert: "$concert", seller: "$seller", price: '$_id.price', available: "$count", _id : 0 }}
+      ])
+      return tickets
     },
 
     async transactions(){
@@ -249,16 +274,36 @@ const resolvers = {
     async createTicket(_,{type,price,sellerId,concertId,redeemedAt,buyerId}){
       sellerId = Types.ObjectId(sellerId)
       concertId = Types.ObjectId(concertId)
+      let redeemed = false
       if(buyerId)
         buyerId = Types.ObjectId(buyerId)
       let ticket = new Ticket({
-        type,price,redeemedAt,sellerId,buyerId,concertId
+        type,price,redeemed,redeemedAt,sellerId,buyerId,concertId
       })
       await ticket.save((err)=>{
         if(err)
           throw err
       })
       return ticket
+    },
+
+    async createTickets(_,{amount,type,price,sellerId,concertId,redeemedAt,buyerId}){
+      sellerId = Types.ObjectId(sellerId)
+      concertId = Types.ObjectId(concertId)
+      if(buyerId)
+        buyerId = Types.ObjectId(buyerId)
+      let redeemed = false
+      let tickets = []
+
+      for(let count = 0; count < amount;count++){
+        tickets.push(
+          new Ticket({
+            type,price,redeemed,redeemedAt,sellerId,buyerId,concertId
+          })
+        )
+      }
+      await Ticket.collection.insertMany(tickets)
+      return tickets
     },
 
     async buy(_,{ticketId,payerId}){
@@ -296,8 +341,55 @@ const resolvers = {
       //update buyer in ticket
       await Ticket.updateOne(
           { "_id" : ticketId },
-          { $set : { buyerId: payerId } }
+          { $set : { buyerId: payerId, redeemed: true } }
       )
+
+      return transaction
+    },
+
+    async buyBulk(_,{number,concertId,sellerId,price,payerId}){
+      //need to create transaction / update both receiver and payer Wallet / and update ticket
+      payerId = Types.ObjectId(payerId)
+      concertId = Types.ObjectId(concertId)
+      sellerId = Types.ObjectId(sellerId)
+      //buy tickets
+      date = new Date()
+      
+      let receiverId = Types.ObjectId(sellerId)
+      let payer = await User.findOne(payerId)
+      let receiver = await User.findOne(receiverId)
+      let amount = price * number
+
+      //decrease payer wallet
+      await Wallet.updateOne(
+          { "_id" : payer.walletId },
+          { $inc : { balance: amount } }
+      )
+
+      //increase receiver wallet
+      await Wallet.updateOne(
+          { "_id" : receiver.walletId },
+          { $inc : { balance: -amount } }
+      )
+
+      //create the transaction
+      let transaction = new Transaction({
+        amount,date,payerId,receiverId,concertId
+      })
+
+      await transaction.save()
+
+      //update buyer in ticket
+      let tickets = await Ticket.find({
+        concertId,sellerId,price
+      }).limit(number)
+
+      await tickets.forEach( async (el) => { 
+        el.redeemed = true
+        el.redeemedAt = Date()
+        el.buyerId = payerId
+        await Ticket.collection.save(el)
+      })
 
       return transaction
     },
@@ -319,7 +411,7 @@ const resolvers = {
 }
 
 
-mongoose.connect('mongodb://julian-blaschke:Julian1999@ds247001.mlab.com:47001/need-a-ticket')
+mongoose.connect('mongodb://julian-blaschke:Julian1999@ds247001.mlab.com:47001/need-a-ticket', {useNewUrlParser: true})
 
 const server = new ApolloServer({ typeDefs, resolvers, introspection: true, playground: true })
 

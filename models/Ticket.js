@@ -5,6 +5,7 @@ const {User} = require('./User')
 const TicketSchema = new mongoose.Schema({
     type: String,
     price: Number,
+    redeemed: Boolean,
     redeemedAt: Date,
     sellerId: mongoose.Types.ObjectId,
     buyerId: mongoose.Types.ObjectId,
