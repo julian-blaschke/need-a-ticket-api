@@ -3,6 +3,7 @@ const jwt = require("express-jwt")
 const jsonwebtoken = require("jsonwebtoken")
 const bcrypt = require("bcryptjs")
 const mongoose = require('mongoose')
+const config = require('./config')
 const { Types } = require('mongoose')
 const { User } = require('./models/User')
 const { Artist } = require('./models/Artist')
@@ -10,7 +11,11 @@ const { Ticket } = require('./models/Ticket')
 const { Concert } = require('./models/Concert')
 const { Transaction } = require('./models/Transaction')
 const { Wallet } = require('./models/Wallet')
-const { ApolloServer, gql } = require('apollo-server-express')
+const { ApolloServer, gql, AuthenticationError } = require('apollo-server-express')
+const {makeExecutableSchema, addSchemaLevelResolveFunction} = require('graphql-tools')
+
+
+global.config = config
 
 // Construct a schema, using GraphQL schema language
 const typeDefs = gql`
@@ -19,8 +24,9 @@ const typeDefs = gql`
     _id: ID!
     username: String!
     email: String!
-    password: String!,
-    wallet: Wallet!,
+    wallet: Wallet!
+    selling: [Ticket]
+    bought: [Ticket]
   }
   type Artist {
     _id: ID,
@@ -57,7 +63,7 @@ const typeDefs = gql`
     receiver: User!,
     ticket: Ticket!,
   }
-    type groupedTicket{
+  type groupedTicket{
     concert: Concert!, 
     price: Float!,
     seller: User!,
@@ -81,11 +87,11 @@ const typeDefs = gql`
     login (email: String!, password: String!): String
     createArtist (name: String!): Artist
     createConcert (title: String!, date: Date!, address: String!, capacity: Float!, artistId: ID!): Concert
-    createTicket (type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): Ticket
+    createTicket (type: String!, price: Float!,concertId: String!,redeemedAt: Date, buyerId: String): Ticket
     createTickets (amount: Float!, type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
     buy (ticketId: ID!, payerId: ID!): Transaction
-    buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!, payerId: ID!): Transaction 
-    deposit (amount: Float!, userId: ID!): Wallet
+    buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!): Transaction 
+    deposit (amount: Float!): Wallet
   }
 `
 
@@ -108,7 +114,9 @@ const resolvers = {
     async users() {
       return User.aggregate([
         {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
-        {$unwind: "$wallet"}
+        {$unwind: "$wallet"},
+        {$lookup: { from: 'tickets',localField:'_id',foreignField: 'sellerId',as: 'selling'}},
+        {$lookup: { from: 'tickets',localField:'_id',foreignField: 'buyerId',as: 'bought'}},
       ])
     },
 
@@ -217,16 +225,16 @@ const resolvers = {
         email,
         password: await bcrypt.hash(password, 10),
         walletId: wallet._id
-      });
+      })
 
-      await user.save();
+      await user.save()
 
       // Return json web token
       return jsonwebtoken.sign(
         { id: user.id, email: user.email },
-        "process.env.JWT_SECRET",
+        global.config.secret,
         { expiresIn: '1y' }
-      );
+      )
     },
 
     async login(_, { email, password }) {
@@ -243,9 +251,9 @@ const resolvers = {
       }
 
       // Return json web token
-      return jsonwebtoken.sign(
+      return await jsonwebtoken.sign(
         { id: user.id, email: user.email },
-        "process.env.JWT_SECRET",
+        global.config.secret,
         { expiresIn: '1y' }
       )
     },
@@ -271,8 +279,8 @@ const resolvers = {
       return concert
     },
 
-    async createTicket(_,{type,price,sellerId,concertId,redeemedAt,buyerId}){
-      sellerId = Types.ObjectId(sellerId)
+    async createTicket(_,{type,price,concertId,redeemedAt,buyerId},context){
+      sellerId = Types.ObjectId(context.user.id)
       concertId = Types.ObjectId(concertId)
       let redeemed = false
       if(buyerId)
@@ -287,8 +295,8 @@ const resolvers = {
       return ticket
     },
 
-    async createTickets(_,{amount,type,price,sellerId,concertId,redeemedAt,buyerId}){
-      sellerId = Types.ObjectId(sellerId)
+    async createTickets(_,{amount,type,price,concertId,redeemedAt,buyerId},context){
+      sellerId = Types.ObjectId(context.user.id)
       concertId = Types.ObjectId(concertId)
       if(buyerId)
         buyerId = Types.ObjectId(buyerId)
@@ -347,9 +355,9 @@ const resolvers = {
       return transaction
     },
 
-    async buyBulk(_,{number,concertId,sellerId,price,payerId}){
+    async buyBulk(_,{number,concertId,sellerId,price},context){
       //need to create transaction / update both receiver and payer Wallet / and update ticket
-      payerId = Types.ObjectId(payerId)
+      payerId = Types.ObjectId(context.user.id)
       concertId = Types.ObjectId(concertId)
       sellerId = Types.ObjectId(sellerId)
       //buy tickets
@@ -394,8 +402,8 @@ const resolvers = {
       return transaction
     },
 
-    async deposit(_,{amount,userId}){
-      userId = Types.ObjectId(userId)
+    async deposit(_,{amount},context){
+      userId = Types.ObjectId(context.user.id)
 
       let user = await User.findOne(userId)
 
@@ -410,18 +418,33 @@ const resolvers = {
   }
 }
 
-
+//database
 mongoose.connect('mongodb://julian-blaschke:Julian1999@ds247001.mlab.com:47001/need-a-ticket', {useNewUrlParser: true})
 
-const server = new ApolloServer({ typeDefs, resolvers, introspection: true, playground: true })
+//auth exception middleware
+const schema = makeExecutableSchema({typeDefs, resolvers})
+addSchemaLevelResolveFunction(schema, (root, args, context, info) => {
+  if(!context.user)
+    if(info.fieldName !== 'login' && info.fieldName !== 'signup')
+      throw new AuthenticationError("not authenticated.")  
+})
 
-// auth middleware
-const auth = jwt({
-  secret: "process.env.JWT_SECRET",
-  credentialsRequired: false
+//create apollo server
+const server = new ApolloServer({ schema, introspection: true, playground: true, context: ({ req }) => ({
+    user: req.user
+  })
 })
 
 const app = express()
+
+//auth middleware
+const auth = jwt({
+  secret: global.config.secret,
+  credentialsRequired: false,
+})
+
+
+//apply middleware
 app.use(auth)
 
 server.applyMiddleware({ app })
