@@ -11,7 +11,7 @@ const { Ticket } = require('./models/Ticket')
 const { Concert } = require('./models/Concert')
 const { Transaction } = require('./models/Transaction')
 const { Wallet } = require('./models/Wallet')
-const { ApolloServer, gql, AuthenticationError } = require('apollo-server-express')
+const { ApolloServer, gql, AuthenticationError,ApolloError } = require('apollo-server-express')
 const {makeExecutableSchema, addSchemaLevelResolveFunction} = require('graphql-tools')
 
 
@@ -22,76 +22,81 @@ const typeDefs = gql`
   scalar Date
   type User {
     _id: ID!
-    username: String!
+    username: String
     email: String!
     wallet: Wallet!
     selling: [Ticket]
     bought: [Ticket]
+    totalSelling: Int
+    totalBought: Int
   }
   type Artist {
     _id: ID,
     name: String!
   }
   type Concert {
-    _id: ID!,
-    title: String!,
-    date: Date!,
-    address: String!,
-    capacity: Float!,
-    tickets: [Ticket],
-    artist: Artist,
+    _id: ID!
+    title: String!
+    date: Date!
+    address: String!
+    capacity: Float!
+    tickets: [Ticket]
+    artist: Artist
   }
   type Ticket {
-    _id: ID!,
-    type: String!,
-    price: Float!,
-    redeemed: Boolean!,
-    redeemedAt: Date,
-    seller: User!,
-    buyer: User,
-    concert: Concert!,
+    _id: ID!
+    type: String!
+    price: Float!
+    redeemed: Boolean!
+    redeemedAt: Date
+    seller: User!
+    buyer: User
+    concert: Concert!
   }
   type Wallet {
-    _id: ID!,
-    balance: Float!,
+    _id: ID!
+    balance: Float!
   }
   type Transaction {
-    _id: ID!,
-    date: Date!,
-    amount: Float!,
-    payer: User!,
-    receiver: User!,
-    ticket: Ticket!,
+    _id: ID!
+    date: Date!
+    amount: Float!
+    payer: User!
+    receiver: User!
+    ticket: Ticket!
   }
   type groupedTicket{
-    concert: Concert!, 
-    price: Float!,
-    seller: User!,
+    concert: Concert! 
+    price: Float!
+    seller: User!
     available: Float!
   }
   type Query {
-    users:[User],
-    user(id: ID!): User,
-    artists: [Artist],
-    artist(id: ID!): Artist,
-    concerts: [Concert],
-    concert(id: ID!): Concert,
-    tickets: [Ticket],
-    ticketsGrouped: [groupedTicket],
-    ticket(id: ID!): Ticket,
-    transactions: [Transaction],
-    transaction(id: ID!): Transaction,
+    me: User
+    users:[User]
+    user(id: ID!): User
+    artists: [Artist]
+    artist(id: ID!): Artist
+    concerts: [Concert]
+    concert(id: ID!): Concert
+    tickets: [Ticket]
+    ticketsGrouped: [groupedTicket]
+    ticket(id: ID!): Ticket
+    transactions: [Transaction]
+    transaction(id: ID!): Transaction
   }
   type Mutation {
-    signup (username: String!, email: String!, password: String!): String
+    signup (username: String, email: String!, password: String!): String
     login (email: String!, password: String!): String
     createArtist (name: String!): Artist
     createConcert (title: String!, date: Date!, address: String!, capacity: Float!, artistId: ID!): Concert
     createTicket (type: String!, price: Float!,concertId: String!,redeemedAt: Date, buyerId: String): Ticket
     createTickets (amount: Float!, type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
-    buy (ticketId: ID!, payerId: ID!): Transaction
+    updateUser (email: String, password: String) : User
+    buy (ticketId: ID!): Transaction
     buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!): Transaction 
     deposit (amount: Float!): Wallet
+    redeem (ticketId: ID!): Ticket
   }
 `
 
@@ -100,15 +105,46 @@ const typeDefs = gql`
 // Provide resolver functions for your schema fields
 const resolvers = {
   Query: {
+    async me(_,{},context){
+      let _id = Types.ObjectId(context.user.id)
+      let selling = await Ticket.find({
+        sellerId: _id
+      }).countDocuments()
+      let bought = await Ticket.find({
+        buyerId: _id
+      }).countDocuments()
 
-    async user(_,{id}) {
       let user = await User.aggregate([
         {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
         {$unwind: "$wallet"},
-        {$match : {_id : Types.ObjectId(id)}},
+        {$match : {_id }},
         {$limit : 1}
       ])
-      return user.shift()
+      user = user.shift()
+      user.totalSelling = selling
+      user.totalBought = bought
+      return user
+    },
+
+    async user(_,{id}) {
+      let _id = Types.ObjectId(id)
+      let selling = await Ticket.find({
+        sellerId: _id
+      }).countDocuments()
+      let bought = await Ticket.find({
+        buyerId: _id
+      }).countDocuments()
+
+      let user = await User.aggregate([
+        {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
+        {$unwind: "$wallet"},
+        {$match : {_id }},
+        {$limit : 1}
+      ])
+      user = user.shift()
+      user.totalSelling = selling
+      user.totalBought = bought
+      return user
     },
 
     async users() {
@@ -140,11 +176,13 @@ const resolvers = {
     },
 
     async concerts(){
-      return Concert.aggregate([
+      let concerts = await Concert.aggregate([
         {$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
         {$unwind: "$artist"},
         {$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }}
         ])
+      console.log(concerts)
+      return concerts;
     },
 
     async ticket(_,{id}){
@@ -152,7 +190,7 @@ const resolvers = {
           {$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
           {$unwind: "$seller"},
           {$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
-          {$unwind: "$buyer"},
+          {$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
           {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
           {$unwind: "$concert"},
           {$match : {_id : Types.ObjectId(id)}},
@@ -162,19 +200,20 @@ const resolvers = {
     },
 
     async tickets(){
-      return await Ticket.aggregate([
-        {$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
-        {$unwind: "$seller"},
-        {$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
-        {$unwind: "$buyer"},
-        {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
-        {$unwind: "$concert"},
-      ])
+      let tickets =  await Ticket.aggregate([
+          {$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
+          {$unwind: "$seller"},
+          {$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
+          {$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
+          {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
+          {$unwind: "$concert"}
+        ])
+      return tickets
     },
 
     async ticketsGrouped(){
       let tickets =  await Ticket.aggregate([
-        {$match: {redeemed: false} },
+        {$match: {buyerId: {$exists: true}} },
         {$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price' }, count: {$sum: 1}}},
         {$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
         {$unwind: "$seller"},
@@ -314,9 +353,32 @@ const resolvers = {
       return tickets
     },
 
-    async buy(_,{ticketId,payerId}){
+    async updateUser(_,{email,password},context){
+      let _id = Types.ObjectId(context.user.id)
+      if(email){
+        await User.updateOne(
+          { _id },
+          { $set : { email } }
+        )
+      }
+      if(password){
+        await User.updateOne(
+          { _id },
+          { $set : { password: await bcrypt.hash(password, 10) } }
+        )
+      }
+      let user = await User.aggregate([
+        {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
+        {$unwind: "$wallet"},
+        {$match : { _id }},
+        {$limit : 1}
+      ])
+      return user.shift()
+    },
+
+    async buy(_,{ticketId},context){
       //need to create transaction / update both receiver and payer Wallet / and update ticket
-      payerId = Types.ObjectId(payerId)
+      payerId = Types.ObjectId(context.user.id)
       ticketId = Types.ObjectId(ticketId)
       date = new Date()
 
@@ -349,7 +411,7 @@ const resolvers = {
       //update buyer in ticket
       await Ticket.updateOne(
           { "_id" : ticketId },
-          { $set : { buyerId: payerId, redeemed: true } }
+          { $set : { buyerId: payerId } }
       )
 
       return transaction
@@ -393,8 +455,6 @@ const resolvers = {
       }).limit(number)
 
       await tickets.forEach( async (el) => { 
-        el.redeemed = true
-        el.redeemedAt = Date()
         el.buyerId = payerId
         await Ticket.collection.save(el)
       })
@@ -413,6 +473,31 @@ const resolvers = {
       )
 
       return Wallet.findOne(user.walletId)
+    },
+
+    async redeem(_,{ticketId},context){
+      ticketId = Types.ObjectId(ticketId)
+      let redeemedAt = new Date()
+      let ticket = Ticket.findOne(ticketId)
+      if(!ticket)
+        throw new ApolloError("ticket not found", 404)
+      
+      await Ticket.updateOne(
+        { "_id" : ticketId },
+        { $set : { redeemed: true, redeemedAt } }
+      )
+
+      ticket = await Ticket.aggregate([
+          {$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
+          {$unwind: "$seller"},
+          {$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
+          {$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
+          {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
+          {$unwind: "$concert"},
+          {$match : {_id : ticketId}},
+          {$limit : 1}
+      ])
+      return ticket.shift()
     }
 
   }
