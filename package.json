@@ -1,13 +1,17 @@
 {
-  "name": "graphql-server",
+  "name": "need-a-ticket-api",
   "version": "1.0.0",
-  "description": "",
+  "description": "api for the need-a-ticket service. based on node-js, using graphql.",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Chris6077/NeedATicket.git"
+  },
   "scripts": {
     "start": "node index.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "julian-blaschke",
   "license": "ISC",
   "dependencies": {
     "apollo-server": "^2.3.3",

@@ -28,8 +28,10 @@ const typeDefs = gql`
     wallet: Wallet!
     selling: [Ticket]
     bought: [Ticket]
+    redeemed: [Ticket]
     totalSelling: Int
     totalBought: Int
+    totalRedeemed: Int
     passwordStrength: PasswordMeter
   }
   type PasswordMeter {
@@ -87,7 +89,7 @@ const typeDefs = gql`
     concerts: [Concert]
     concert(id: ID!): Concert
     tickets: [Ticket]
-    ticketsGrouped: [groupedTicket]
+    ticketsGrouped(concertId: ID): [groupedTicket]
     ticket(id: ID!): Ticket
     transactions: [Transaction]
     transaction(id: ID!): Transaction
@@ -115,13 +117,27 @@ const resolvers = {
   Query: {
     async me(_,{},context){
       let _id = Types.ObjectId(context.user.id)
-      let selling = await Ticket.find({
+      let totalselling = await Ticket.find({
         sellerId: _id
       }).countDocuments()
-      let bought = await Ticket.find({
+      let totalredeemed = await Ticket.find({
+        buyerId: _id,
+        redeemed: true
+      }).countDocuments()
+      let totalbought = await Ticket.find({
         buyerId: _id
       }).countDocuments()
-
+      let selling = await Ticket.find({
+        sellerId: _id
+      })
+      let redeemed = await Ticket.find({
+        buyerId: _id,
+        redeemed: true
+      })
+      let bought = await Ticket.find({
+        buyerId: _id
+      })
+      console.log(redeemed)
       let user = await User.aggregate([
         {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
         {$unwind: "$wallet"},
@@ -129,8 +145,12 @@ const resolvers = {
         {$limit : 1}
       ])
       user = user.shift()
-      user.totalSelling = selling
-      user.totalBought = bought
+      user.totalSelling = totalselling
+      user.totalBought = totalbought
+      user.totalRedeemed = totalredeemed;
+      user.selling = selling
+      user.bought = bought
+      user.redeemed = redeemed
       return user
     },
 
@@ -219,8 +239,20 @@ const resolvers = {
       return tickets
     },
 
-    async ticketsGrouped(){
-      let tickets =  await Ticket.aggregate([
+    async ticketsGrouped(_,{concertId}){
+      if(concertId){
+        return await Ticket.aggregate([
+          {$match: {buyerId: {$exists: true}} },
+          {$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price' }, count: {$sum: 1}}},
+          {$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
+          {$unwind: "$seller"},
+          {$lookup: { from: 'concerts',localField:'_id.concertId',foreignField: '_id',as: 'concert'}},
+          {$unwind: "$concert"},
+          {$project: {concert: "$concert", seller: "$seller", price: '$_id.price', available: "$count", _id : 0 }},
+          {$match : {"concert._id" : Types.ObjectId(concertId)}},
+        ])
+      }
+      return await Ticket.aggregate([
         {$match: {buyerId: {$exists: true}} },
         {$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price' }, count: {$sum: 1}}},
         {$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
@@ -229,7 +261,6 @@ const resolvers = {
         {$unwind: "$concert"},
         {$project: {concert: "$concert", seller: "$seller", price: '$_id.price', available: "$count", _id : 0 }}
       ])
-      return tickets
     },
 
     async transactions(){
@@ -261,6 +292,9 @@ const resolvers = {
 
   Mutation: {
     async signup(_, { username, email, password }) {
+      if(email)
+        if(await User.findOne({email}))
+          throw new ApolloError("an user with this email already exists")
       let wallet = new Wallet({
         balance: 0
       })
@@ -408,7 +442,7 @@ const resolvers = {
         {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
         {$unwind: "$wallet"},
         {$match : { _id }},
-         {$limit : 1}
+        {$limit : 1}
       ])
       return user.shift()
     },
@@ -519,11 +553,11 @@ const resolvers = {
       if(context.user.role != "staff")
         throw new AuthenticationError("your not logged in as staff")
       if(ticket.concertId +"" !=  Types.ObjectId(context.user.id)+"")
-        throw new AuthenticationError("you cannot redeem tickets from different concerts")
+        throw new AuthenticationError("you cannot redeem tickets for other concerts")
       if(!ticket)
         throw new ApolloError("ticket not found", 404)
       if(ticket.redeemed)
-        throw new ApolloError("ticket already redeemed.",401)
+        throw new ApolloError("ticket already redeemed.",400)
       await Ticket.updateOne(
         { "_id" : ticketId },
         { $set : { redeemed: true, redeemedAt } }
