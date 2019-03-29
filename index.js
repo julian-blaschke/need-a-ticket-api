@@ -48,7 +48,8 @@ const typeDefs = gql`
     _id: ID!
     title: String!
     date: Date!
-    address: String!
+    address: String!,
+    genere: String,
     capacity: Float!
     tickets: [Ticket]
     artist: Artist
@@ -101,7 +102,7 @@ const typeDefs = gql`
     login (email: String!, password: String!): String
     staffLogin (concertId: ID!): String
     createArtist (name: String!): Artist
-    createConcert (title: String!, date: Date!, address: String!, capacity: Float!, artistId: ID!): Concert
+    createConcert (title: String!, date: Date!, address: String!, genre: String!, capacity: Float!, artistId: ID!): Concert
     createTicket (type: String!, price: Float!,concertId: String!,redeemedAt: Date, buyerId: String): Ticket
     createTickets (amount: Float!, type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
     updateUser (email: String, password: String) : User
@@ -183,8 +184,8 @@ const resolvers = {
       return logic.Artist.insertOne({name})
     },
 
-    async createConcert(_,{title,date,address,capacity,artistId},context) {
-      return logic.Concert.insertOne({title,date,address,capacity,artistId,sellerId: context.user.id})
+    async createConcert(_,{title,date,address,genre,capacity,artistId},context) {
+      return logic.Concert.insertOne({title,date,address,genre,capacity,artistId,sellerId: context.user.id})
     },
 
     async createTicket(_,{type,price,concertId,redeemedAt,buyerId},context){

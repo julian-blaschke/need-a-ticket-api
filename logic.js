@@ -267,10 +267,10 @@ async function insertOneArtist({name}){
 	return artist
 }
 // 		insert one concert
-async function insertOneConcert({title,date,address,capacity,artistId,sellerId}){
+async function insertOneConcert({title,date,address,genre,capacity,artistId,sellerId}){
 	artistId = Types.ObjectId(artistId)
 	let concert = new Concert({
-		title,date,address,capacity,artistId,sellerId
+		title,date,address,genre,capacity,artistId,sellerId
 	})
 	await concert.save((err) => {
 	if(err)
