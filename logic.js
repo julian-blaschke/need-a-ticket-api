@@ -100,7 +100,7 @@ async function findAllConcerts(){
 	])
 	await concerts.forEach(	async(concert) => {
 		await concert.tickets.forEach( async(ticket) => {
-			ticket.seller =  findOneUser({id: ticket.sellerId})	
+			ticket.seller =  await findOneUser({id: ticket.sellerId})	
 			if(ticket.buyerId)
 				ticket.buyer = await findOneUser({id: ticket.buyerId})	
 		})
@@ -136,7 +136,7 @@ async function findAllTickets(){
 //		find all tickets and group them by concert, seller and price
 async function findAndGroupTickets({concertId}){
 	if(concertId){
-		return await Ticket.aggregate([
+		let tickets = await Ticket.aggregate([
 			{$match: {buyerId: {$exists: true}} },
 			{$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price', type: '$type' }, count: {$sum: 1}}},
 			{$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
@@ -146,8 +146,12 @@ async function findAndGroupTickets({concertId}){
 			{$project: {concert: "$concert", seller: "$seller", price: '$_id.price', available: "$count", type: "$_id.type", _id : 0 }},
 			{$match : {"concert._id" : Types.ObjectId(concertId)}},
 		])
+		for(let ticket of tickets){
+			ticket.concert.artist = await findOneArtist({id: ticket.concert.artistId})
+		}
+		return tickets;
 	}
-	return await Ticket.aggregate([
+	let tickets = await Ticket.aggregate([
 		{$match: {buyerId: {$exists: true}} },
 		{$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price', type: '$type' }, count: {$sum: 1}}},
 		{$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
@@ -156,6 +160,10 @@ async function findAndGroupTickets({concertId}){
 		{$unwind: "$concert"},
 		{$project: {concert: "$concert", seller: "$seller", price: '$_id.price', available: "$count", type: "$_id.type", _id : 0 }}
 	])
+	for(let ticket of tickets){
+		ticket.concert.artist = await findOneArtist({id: ticket.concert.artistId})
+	}
+	return tickets
 }
 //		find one transaction and aggregate it
 async function findOneTransaction({id}){
