@@ -5,6 +5,7 @@ const bcrypt = require("bcryptjs")
 const mongoose = require('mongoose')
 const config = require('./config')
 const {PasswordMeter} = require('password-meter')
+const { logic } = require('./logic')
 const { Types } = require('mongoose')
 const { User } = require('./models/User')
 const { Artist } = require('./models/Artist')
@@ -78,6 +79,7 @@ const typeDefs = gql`
     concert: Concert! 
     price: Float!
     seller: User!
+    type: String!
     available: Float!
   }
   type Query {
@@ -116,464 +118,101 @@ const typeDefs = gql`
 const resolvers = {
   Query: {
     async me(_,{},context){
-      let _id = Types.ObjectId(context.user.id)
-      let totalselling = await Ticket.find({
-        sellerId: _id
-      }).countDocuments()
-      let totalredeemed = await Ticket.find({
-        buyerId: _id,
-        redeemed: true
-      }).countDocuments()
-      let totalbought = await Ticket.find({
-        buyerId: _id
-      }).countDocuments()
-      let selling = await Ticket.find({
-        sellerId: _id
-      })
-      let redeemed = await Ticket.find({
-        buyerId: _id,
-        redeemed: true
-      })
-      let bought = await Ticket.find({
-        buyerId: _id
-      })
-      console.log(redeemed)
-      let user = await User.aggregate([
-        {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
-        {$unwind: "$wallet"},
-        {$match : {_id }},
-        {$limit : 1}
-      ])
-      user = user.shift()
-      user.totalSelling = totalselling
-      user.totalBought = totalbought
-      user.totalRedeemed = totalredeemed;
-      user.selling = selling
-      user.bought = bought
-      user.redeemed = redeemed
-      return user
+      return await logic.User.findOne({id:context.user.id})
     },
 
     async user(_,{id}) {
-      let _id = Types.ObjectId(id)
-      let selling = await Ticket.find({
-        sellerId: _id
-      }).countDocuments()
-      let bought = await Ticket.find({
-        buyerId: _id
-      }).countDocuments()
-
-      let user = await User.aggregate([
-        {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
-        {$unwind: "$wallet"},
-        {$match : {_id }},
-        {$limit : 1}
-      ])
-      user = user.shift()
-      user.totalSelling = selling
-      user.totalBought = bought
-      return user
+      return await logic.User.findOne({id})
     },
 
     async users() {
-      return User.aggregate([
-        {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
-        {$unwind: "$wallet"},
-        {$lookup: { from: 'tickets',localField:'_id',foreignField: 'sellerId',as: 'selling'}},
-        {$lookup: { from: 'tickets',localField:'_id',foreignField: 'buyerId',as: 'bought'}},
-      ])
+      return await logic.User.find()
     },
 
     async artist(_,{id}) {
-      return Artist.findOne(Types.ObjectId(id))
+      return await logic.Artist.findOne({id})
     },
 
     async artists() {
-      return Artist.find()
+      return await logic.Artist.find()
     },
 
     async concert(_,{id}) {
-      let concert = await Concert.aggregate([
-        {$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
-        {$unwind: "$artist"},
-        {$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }},
-        {$match : {_id : Types.ObjectId(id)}},
-        {$limit : 1}
-      ])
-      return concert.shift()
+      return await logic.Concert.findOne({id})
     },
 
     async concerts(){
-      let concerts = await Concert.aggregate([
-        {$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
-        {$unwind: "$artist"},
-        {$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }}
-        ])
-      console.log(concerts)
-      return concerts;
+      return await logic.Concert.find()
     },
 
     async ticket(_,{id}){
-      let ticket =  await Ticket.aggregate([
-          {$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
-          {$unwind: "$seller"},
-          {$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
-          {$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
-          {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
-          {$unwind: "$concert"},
-          {$match : {_id : Types.ObjectId(id)}},
-          {$limit : 1}
-      ])
-      return ticket.shift()
+      return logic.Ticket.findOne({id})
     },
 
     async tickets(){
-      let tickets =  await Ticket.aggregate([
-          {$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
-          {$unwind: "$seller"},
-          {$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
-          {$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
-          {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
-          {$unwind: "$concert"}
-        ])
-      return tickets
+      return logic.Ticket.find()
     },
 
     async ticketsGrouped(_,{concertId}){
-      if(concertId){
-        return await Ticket.aggregate([
-          {$match: {buyerId: {$exists: true}} },
-          {$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price' }, count: {$sum: 1}}},
-          {$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
-          {$unwind: "$seller"},
-          {$lookup: { from: 'concerts',localField:'_id.concertId',foreignField: '_id',as: 'concert'}},
-          {$unwind: "$concert"},
-          {$project: {concert: "$concert", seller: "$seller", price: '$_id.price', available: "$count", _id : 0 }},
-          {$match : {"concert._id" : Types.ObjectId(concertId)}},
-        ])
-      }
-      return await Ticket.aggregate([
-        {$match: {buyerId: {$exists: true}} },
-        {$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price' }, count: {$sum: 1}}},
-        {$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
-        {$unwind: "$seller"},
-        {$lookup: { from: 'concerts',localField:'_id.concertId',foreignField: '_id',as: 'concert'}},
-        {$unwind: "$concert"},
-        {$project: {concert: "$concert", seller: "$seller", price: '$_id.price', available: "$count", _id : 0 }}
-      ])
-    },
-
-    async transactions(){
-      return await Transaction.aggregate([
-        {$lookup: { from: 'users',localField:'payerId',foreignField: '_id',as: 'payer'}},
-        {$unwind: "$payer"},
-        {$lookup: { from: 'users',localField:'receiverId',foreignField: '_id',as: 'receiver'}},
-        {$unwind: "$receiver"},
-        {$lookup: { from: 'tickets',localField:'ticketId',foreignField: '_id',as: 'ticket'}},
-        {$unwind: "$ticket"},
-      ])
+      return logic.Ticket.findAndGroup({concertId})
     },
 
     async transaction(_,{id}){
-      let transaction = await Transaction.aggregate([
-        {$lookup: { from: 'users',localField:'payerId',foreignField: '_id',as: 'payer'}},
-        {$unwind: "$payer"},
-        {$lookup: { from: 'users',localField:'receiverId',foreignField: '_id',as: 'receiver'}},
-        {$unwind: "$receiver"},
-        {$lookup: { from: 'tickets',localField:'ticketId',foreignField: '_id',as: 'ticket'}},
-        {$unwind: "$ticket"},
-        {$match : {_id : Types.ObjectId(id)}},
-        {$limit : 1}
-      ])
-      return transaction.shift()
-    }
+      return logic.Transaction.findOne({id})  
+    },
 
+    async transactions(){
+      return logic.Transaction.find()
+    },
   },
 
   Mutation: {
     async signup(_, { username, email, password }) {
-      if(email)
-        if(await User.findOne({email}))
-          throw new ApolloError("an user with this email already exists")
-      let wallet = new Wallet({
-        balance: 0
-      })
-      let passwordStrength = await new PasswordMeter({},{
-        "50": "very weak",  // 001 <= x <  040
-        "100": "weak",  // 040 <= x <  080
-        "150": "average", // 080 <= x <  120
-        "200": "strong", // 120 <= x <  180
-        "_": "very strong"   //        x >= 200
-      }).getResult(password)
-
-      await wallet.save()
-
-      let user = new User({
-        username,
-        email,
-        password: await bcrypt.hash(password, 10),
-        walletId: wallet._id,
-        passwordStrength
-      })
-      await user.save()
-
-      // Return json web token
-      return jsonwebtoken.sign(
-        { id: user.id, email: user.email },
-        global.config.secret,
-        { expiresIn: '1y' }
-      )
+      return logic.User.signup({username,email,password})
     },
 
     async login(_, { email, password }) {
-      const user = await User.findOne({ email: email })
-
-      if (!user) {
-        throw new Error('No user with that email')
-      }
-
-      const valid = await bcrypt.compare(password, user.password)
-
-      if (!valid) {
-        throw new Error('Incorrect password')
-      }
-
-      // Return json web token
-      return await jsonwebtoken.sign(
-        { id: user.id, email: user.email },
-        global.config.secret,
-        { expiresIn: '1y' }
-      )
+      return logic.User.login({email,password})
     },
 
     async staffLogin(_, { concertId }) {
-      const concert = await Concert.findOne(Types.ObjectId(concertId))
-
-      if (!concert) {
-        throw new Error('No concert with that id')
-      }
-
-      // Return json web token
-      return await jsonwebtoken.sign(
-        { id: concert.id, role: "staff" },
-        global.config.secret,
-        { expiresIn: '1y' }
-      )
+      return logic.User.loginStaff({concertId})
     },
 
     async createArtist(_, {name}) {
-      let artist = new Artist({name})
-      await artist.save((err) => {
-        if (err)
-          throw err
-      })
-      return artist
+      return logic.Artist.insertOne({name})
     },
 
-    async createConcert(_,{title,date,address,capacity,artistId}) {
-      artistId = Types.ObjectId(artistId)
-      let concert = new Concert({
-        title,date,address,capacity,artistId
-      })
-      await concert.save((err) => {
-        if(err)
-          throw err
-      })
-      return concert
+    async createConcert(_,{title,date,address,capacity,artistId},context) {
+      return logic.Concert.insertOne({title,date,address,capacity,artistId,sellerId: context.user.id})
     },
 
     async createTicket(_,{type,price,concertId,redeemedAt,buyerId},context){
-      sellerId = Types.ObjectId(context.user.id)
-      concertId = Types.ObjectId(concertId)
-      let redeemed = false
-      if(buyerId)
-        buyerId = Types.ObjectId(buyerId)
-      let ticket = new Ticket({
-        type,price,redeemed,redeemedAt,sellerId,buyerId,concertId
-      })
-      await ticket.save((err)=>{
-        if(err)
-          throw err
-      })
-      return ticket
+      return await logic.Ticket.insertOne({type,price,concertId,redeemedAt,buyerId,sellerId: context.user.id})
     },
 
     async createTickets(_,{amount,type,price,concertId,redeemedAt,buyerId},context){
-      sellerId = Types.ObjectId(context.user.id)
-      concertId = Types.ObjectId(concertId)
-      if(buyerId)
-        buyerId = Types.ObjectId(buyerId)
-      let redeemed = false
-      let tickets = []
-
-      for(let count = 0; count < amount;count++){
-        tickets.push(
-          new Ticket({
-            type,price,redeemed,redeemedAt,sellerId,buyerId,concertId
-          })
-        )
-      }
-      await Ticket.collection.insertMany(tickets)
-      return tickets
+      return logic.Ticket.insertMany({amount,type,price,concertId,redeemedAt,buyerId,sellerId: context.user.id})
     },
 
     async updateUser(_,{email,password},context){
-      let _id = Types.ObjectId(context.user.id)
-      if(email){
-        await User.updateOne(
-          { _id },
-          { $set : { email } }
-        )
-      }
-      if(password){
-        let passwordStrength = await new PasswordMeter({},{
-          "50": "very weak",  // 001 <= x <  040
-          "100": "weak",  // 040 <= x <  080
-          "150": "average", // 080 <= x <  120
-          "200": "strong", // 120 <= x <  180
-          "_": "very strong"   //        x >= 200
-        }).getResult(password)
-        await User.updateOne(
-          { _id },
-          { $set : { password: await bcrypt.hash(password, 10) , passwordStrength} }
-        )
-      }
-      let user = await User.aggregate([
-        {$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
-        {$unwind: "$wallet"},
-        {$match : { _id }},
-        {$limit : 1}
-      ])
-      return user.shift()
+      return logic.User.updateOne({email,password,userId:context.user.id})
     },
 
     async buy(_,{ticketId},context){
-      //need to create transaction / update both receiver and payer Wallet / and update ticket
-      payerId = Types.ObjectId(context.user.id)
-      ticketId = Types.ObjectId(ticketId)
-      date = new Date()
-
-      let ticket = await Ticket.findOne(ticketId)
-      let receiverId = Types.ObjectId(ticket.sellerId)
-      let amount = ticket.price 
-      let payer = await User.findOne(payerId)
-      let receiver = await User.findOne(receiverId)
-
-      
-      //decrease payer wallet
-      await Wallet.updateOne(
-        { "_id" : payer.walletId },
-        { $inc : { balance: amount } }
-      )
-
-      //increase receiver wallet
-      await Wallet.updateOne(
-        { "_id" : receiver.walletId },
-        { $inc : { balance: -amount } }
-      )
-      
-      //create the transaction
-      let transaction = new Transaction({
-        amount,date,payerId,receiverId,ticketId
-      })
-
-      await transaction.save()
-
-      //update buyer in ticket
-      await Ticket.updateOne(
-          { "_id" : ticketId },
-          { $set : { buyerId: payerId } }
-      )
-
-      return transaction
+      return logic.Ticket.buyOne({ticketId,userId: context.user.id})
     },
 
     async buyBulk(_,{number,concertId,sellerId,price},context){
-      //need to create transaction / update both receiver and payer Wallet / and update ticket
-      payerId = Types.ObjectId(context.user.id)
-      concertId = Types.ObjectId(concertId)
-      sellerId = Types.ObjectId(sellerId)
-      //buy tickets
-      date = new Date()
-      
-      let receiverId = Types.ObjectId(sellerId)
-      let payer = await User.findOne(payerId)
-      let receiver = await User.findOne(receiverId)
-      let amount = price * number
-
-      //decrease payer wallet
-      await Wallet.updateOne(
-          { "_id" : payer.walletId },
-          { $inc : { balance: amount } }
-      )
-
-      //increase receiver wallet
-      await Wallet.updateOne(
-          { "_id" : receiver.walletId },
-          { $inc : { balance: -amount } }
-      )
-
-      //create the transaction
-      let transaction = new Transaction({
-        amount,date,payerId,receiverId,concertId
-      })
-
-      await transaction.save()
-
-      //update buyer in ticket
-      let tickets = await Ticket.find({
-        concertId,sellerId,price
-      }).limit(number)
-
-      await tickets.forEach( async (el) => { 
-        el.buyerId = payerId
-        await Ticket.collection.save(el)
-      })
-
-      return transaction
+      return logic.Ticket.buyMany({number,concertId,sellerId,price,userId:context.user.id})
     },
 
     async deposit(_,{amount},context){
-      userId = Types.ObjectId(context.user.id)
-
-      let user = await User.findOne(userId)
-
-      await Wallet.updateOne(
-        { "_id" : user.walletId },
-        { $inc : { balance: amount } }
-      )
-
-      return Wallet.findOne(user.walletId)
+      return logic.User.deposit({amount,userId:context.user.id})
     },
 
     async redeem(_,{ticketId},context){
-      ticketId = Types.ObjectId(ticketId)
-      let redeemedAt = new Date()
-      let ticket = await Ticket.findOne(ticketId)
-      if(context.user.role != "staff")
-        throw new AuthenticationError("your not logged in as staff")
-      if(ticket.concertId +"" !=  Types.ObjectId(context.user.id)+"")
-        throw new AuthenticationError("you cannot redeem tickets for other concerts")
-      if(!ticket)
-        throw new ApolloError("ticket not found", 404)
-      if(ticket.redeemed)
-        throw new ApolloError("ticket already redeemed.",400)
-      await Ticket.updateOne(
-        { "_id" : ticketId },
-        { $set : { redeemed: true, redeemedAt } }
-      )
-
-      ticket = await Ticket.aggregate([
-          {$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
-          {$unwind: "$seller"},
-          {$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
-          {$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
-          {$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
-          {$unwind: "$concert"},
-          {$match : {_id : ticketId}},
-          {$limit : 1}
-      ])
-      return ticket.shift()
+      return logic.Ticket.redeemOne({ticketId,user: context.user})
     }
 
   }
