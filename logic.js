@@ -32,23 +32,20 @@ async function findOneUser({id}){
 	let totalbought = await Ticket.find({
 		buyerId: _id
 	}).countDocuments()
-	let selling = await Ticket.find({
-		sellerId: _id
-	})
+	let selling = await findManyTickets({sellerId:_id})
 	let redeemed = await Ticket.find({
 		buyerId: _id,
 		redeemed: true
 	})
-	let bought = await Ticket.find({
-		buyerId: _id
-	})
+	let	bought = await findManyTickets({buyerId:_id	})
 	let user = await User.aggregate([
 		{$lookup: { from: 'wallets',localField:'walletId',foreignField: '_id',as: 'wallet'}},
 		{$unwind: "$wallet"},
 		{$match : {_id }},
 		{$limit : 1}
 	])
-	user = user.shift()
+	user = await user.shift()
+	console.log(selling)
 	user.totalSelling = totalselling
 	user.totalBought = totalbought
 	user.totalRedeemed = totalredeemed;
@@ -120,6 +117,32 @@ async function findOneTicket({id}){
 		{$limit : 1}
 	])	
 	return ticket.shift()
+}
+//		find many tickets
+async function findManyTickets({buyerId,sellerId}){
+	let tickets
+	if(buyerId){
+		tickets =  await Ticket.aggregate([
+			{$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
+			{$unwind: "$seller"},
+			{$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
+			{$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
+			{$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
+			{$unwind: "$concert"},
+			{$match : {buyerId}}
+		])	
+	}else if(sellerId){
+		tickets =  await Ticket.aggregate([
+			{$lookup: { from: 'users',localField:'sellerId',foreignField: '_id',as: 'seller'}},
+			{$unwind: "$seller"},
+			{$lookup: { from: 'users',localField:'buyerId',foreignField: '_id',as: 'buyer'}},
+			{$unwind: { path:"$buyer", preserveNullAndEmptyArrays: true}},
+			{$lookup: { from: 'concerts',localField:'concertId',foreignField: '_id',as: 'concert'}},
+			{$unwind: "$concert"},
+			{$match : {sellerId}}
+		])	
+	}
+	return tickets
 }
 //		find all tickets and aggregate them
 async function findAllTickets(){
