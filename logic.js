@@ -419,11 +419,9 @@ async function buyManyTickets({number,concertId,sellerId,price,userId}){
 	let seller = await User.findOne(sellerId)
 	if(!seller)
 		throw new ApolloError("seller not found.",404)
-	let concert = Concert.findOne({_id: concertId, sellerId: _id})
+	let concert = Concert.findOne({_id: concertId.toString(), sellerId: sellerId.toString()})
 	if(!concert)
 		throw new ApolloError("concert not found",404)
-	if(concert.price !== price)
-		throw new ApolloError("wrong price passed",400) 
 
 	//decrease payer wallet
 	await Wallet.updateOne(
