@@ -160,7 +160,7 @@ async function findAllTickets(){
 async function findAndGroupTickets({concertId}){
 	if(concertId){
 		let tickets = await Ticket.aggregate([
-			{$match: {buyerId: {$exists: true}} },
+			{$match: {buyerId: {$exists: false}} },
 			{$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price', type: '$type' }, count: {$sum: 1}}},
 			{$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
 			{$unwind: "$seller"},
@@ -175,7 +175,7 @@ async function findAndGroupTickets({concertId}){
 		return tickets;
 	}
 	let tickets = await Ticket.aggregate([
-		{$match: {buyerId: {$exists: true}} },
+		{$match: {buyerId: {$exists: false}} },
 		{$group: {_id: {concertId: '$concertId', sellerId: "$sellerId", price: '$price', type: '$type' }, count: {$sum: 1}}},
 		{$lookup: { from: 'users',localField:'_id.sellerId',foreignField: '_id',as: 'seller'}},
 		{$unwind: "$seller"},
@@ -377,13 +377,13 @@ async function buyOneTicket({ticketId,userId}){
 	//decrease payer wallet
 	await Wallet.updateOne(
 	  { "_id" : payer.walletId },
-	  { $inc : { balance: amount } }
+	  { $inc : { balance: -amount } }
 	)
 
 	//increase receiver wallet
 	await Wallet.updateOne(
 	  { "_id" : receiver.walletId },
-	  { $inc : { balance: -amount } }
+	  { $inc : { balance: amount } }
 	)
 	
 	//create the transaction
@@ -415,16 +415,26 @@ async function buyManyTickets({number,concertId,sellerId,price,userId}){
 	let receiver = await User.findOne(receiverId)
 	let amount = price * number
 
+	//checks
+	let seller = await User.findOne(sellerId)
+	if(!seller)
+		throw new ApolloError("seller not found.",404)
+	let concert = Concert.findOne({_id: concertId, sellerId: _id})
+	if(!concert)
+		throw new ApolloError("concert not found",404)
+	if(concert.price !== price)
+		throw new ApolloError("wrong price passed",400) 
+
 	//decrease payer wallet
 	await Wallet.updateOne(
 		{ "_id" : payer.walletId },
-		{ $inc : { balance: amount } }
+		{ $inc : { balance: -amount } }
 	)
 
 	//increase receiver wallet
 	await Wallet.updateOne(
 		{ "_id" : receiver.walletId },
-		{ $inc : { balance: -amount } }
+		{ $inc : { balance: amount } }
 	)
 
 	//create the transaction
@@ -451,7 +461,10 @@ async function deposit({amount,userId}){
 	userId = Types.ObjectId(userId)
 
 	let user = await User.findOne(userId)
-
+	let wallet = await Wallet.findOne({"_id": user.walletId})
+	if(amount < 0)
+		if(wallet.balance + amount < 0)
+			throw new ApolloError("you cant cash out more than you own.",400)
 	await Wallet.updateOne(
 	  { "_id" : user.walletId },
 	  { $inc : { balance: amount } }

@@ -49,7 +49,7 @@ const typeDefs = gql`
     title: String!
     date: Date!
     address: String!,
-    genere: String,
+    genre: String,
     capacity: Float!
     tickets: [Ticket]
     artist: Artist
@@ -80,7 +80,7 @@ const typeDefs = gql`
     concert: Concert! 
     price: Float!
     seller: User!
-    type: String!
+    type: String!,
     available: Float!
   }
   type Query {
