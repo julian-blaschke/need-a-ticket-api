@@ -1,19 +1,9 @@
 const express = require('express')
 const jwt = require("express-jwt")
-const jsonwebtoken = require("jsonwebtoken")
-const bcrypt = require("bcryptjs")
 const mongoose = require('mongoose')
 const config = require('./config')
-const {PasswordMeter} = require('password-meter')
 const { logic } = require('./logic')
-const { Types } = require('mongoose')
-const { User } = require('./models/User')
-const { Artist } = require('./models/Artist')
-const { Ticket } = require('./models/Ticket')
-const { Concert } = require('./models/Concert')
-const { Transaction } = require('./models/Transaction')
-const { Wallet } = require('./models/Wallet')
-const { ApolloServer, gql, AuthenticationError,ApolloError } = require('apollo-server-express')
+const { ApolloServer, gql, AuthenticationError } = require('apollo-server-express')
 const {makeExecutableSchema, addSchemaLevelResolveFunction} = require('graphql-tools')
 
 
@@ -50,8 +40,10 @@ const typeDefs = gql`
     date: Date!
     address: String!,
     genre: String,
+    type: String,
     capacity: Float!
     tickets: [Ticket]
+    totalTickets: Int
     artist: Artist
   }
   type Ticket {
@@ -102,14 +94,14 @@ const typeDefs = gql`
     login (email: String!, password: String!): String
     staffLogin (concertId: ID!): String
     createArtist (name: String!): Artist
-    createConcert (title: String!, date: Date!, address: String!, genre: String!, capacity: Float!, artistId: ID!): Concert
+    createConcert (title: String!, date: Date!, address: String!, genre: String!,type: String!, capacity: Float!, artistId: ID!): Concert
     createTicket (type: String!, price: Float!,concertId: String!,redeemedAt: Date, buyerId: String): Ticket
     createTickets (amount: Float!, type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
     updateUser (email: String, password: String) : User
     buy (ticketId: ID!): Transaction
     buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!): Transaction 
     deposit (amount: Float!): Wallet
-    redeem (ticketId: ID!): Ticket
+    redeem (ticketId: String!): Ticket
   }
 `
 
@@ -184,7 +176,7 @@ const resolvers = {
       return logic.Artist.insertOne({name})
     },
 
-    async createConcert(_,{title,date,address,genre,capacity,artistId},context) {
+    async createConcert(_,{title,date,address,genre,type,capacity,artistId},context) {
       return logic.Concert.insertOne({title,date,address,genre,capacity,artistId,sellerId: context.user.id})
     },
 
