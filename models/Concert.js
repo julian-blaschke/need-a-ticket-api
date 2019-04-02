@@ -5,6 +5,7 @@ const ConcertSchema = new mongoose.Schema({
     date: Date,
     address: String,
     genre: String,
+    type: String,
     artistId: mongoose.Types.ObjectId,
 }, {timestamps: true});
 

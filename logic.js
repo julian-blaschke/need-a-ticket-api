@@ -1,7 +1,9 @@
+const express = require('express')
+const jwt = require("express-jwt")
 const jsonwebtoken = require("jsonwebtoken")
 const bcrypt = require("bcryptjs")
 const mongoose = require('mongoose')
-const base64 = require('js-base64').Base64;
+const config = require('./config')
 const {PasswordMeter} = require('password-meter')
 const { Types } = require('mongoose')
 const { User } = require('./models/User')
@@ -10,7 +12,7 @@ const { Ticket } = require('./models/Ticket')
 const { Concert } = require('./models/Concert')
 const { Transaction } = require('./models/Transaction')
 const { Wallet } = require('./models/Wallet')
-const { AuthenticationError,ApolloError } = require('apollo-server-express')
+const { ApolloServer, gql, AuthenticationError,ApolloError } = require('apollo-server-express')
 
 mongoose.connect('mongodb://julian-blaschke:Julian1999@ds247001.mlab.com:47001/need-a-ticket', {useNewUrlParser: true})
 
@@ -43,6 +45,7 @@ async function findOneUser({id}){
 		{$limit : 1}
 	])
 	user = await user.shift()
+	console.log(selling)
 	user.totalSelling = totalselling
 	user.totalBought = totalbought
 	user.totalRedeemed = totalredeemed;
@@ -73,8 +76,7 @@ async function findOneConcert({id}){
 	let concert = await Concert.aggregate([
         {$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
         {$unwind: "$artist"},
-		{$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }},
-		{$project: {_id:"$_id",title:"$title",date:"$date",address:"$address",genre:"$genre",capacity:"$capacity",tickets:"$tickets",artist:"$artist",totalTickets:{$size:"$tickets"}}},
+        {$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }},
         {$match : {_id : Types.ObjectId(id)}},
         {$limit : 1}
 	])
@@ -91,8 +93,7 @@ async function findAllConcerts(){
 	let concerts = await Concert.aggregate([
 		{$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
 		{$unwind: "$artist"},
-		{$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }},
-		{$project: {_id:"$_id",title:"$title",date:"$date",address:"$address",genre:"$genre",capacity:"$capacity",tickets:"$tickets",artist:"$artist",totalTickets:{$size:"$tickets"}}}
+		{$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }}
 	])
 	await concerts.forEach(	async(concert) => {
 		await concert.tickets.forEach( async(ticket) => {
@@ -418,9 +419,11 @@ async function buyManyTickets({number,concertId,sellerId,price,userId}){
 	let seller = await User.findOne(sellerId)
 	if(!seller)
 		throw new ApolloError("seller not found.",404)
-	let concert = Concert.findOne({_id: concertId.toString(), sellerId: sellerId.toString()})
+	let concert = Concert.findOne({_id: concertId, sellerId: _id})
 	if(!concert)
 		throw new ApolloError("concert not found",404)
+	if(concert.price !== price)
+		throw new ApolloError("wrong price passed",400) 
 
 	//decrease payer wallet
 	await Wallet.updateOne(
@@ -471,21 +474,20 @@ async function deposit({amount,userId}){
 }
 // 		redeem an ticket if not already redeemed
 async function redeemOneTicket({ticketId,user}){
-	ticketId = await base64.decode(ticketId)
 	ticketId = Types.ObjectId(ticketId)
 	let redeemedAt = new Date()
 	let ticket = await Ticket.findOne(ticketId)
 	if(user.role != "staff")
-		throw new AuthenticationError("your not logged in as staff")
+	throw new AuthenticationError("your not logged in as staff")
 	if(ticket.concertId +"" !=  Types.ObjectId(user.id)+"")
-		throw new AuthenticationError("you cannot redeem tickets for other concerts")
+	throw new AuthenticationError("you cannot redeem tickets for other concerts")
 	if(!ticket)
-		throw new ApolloError("ticket not found", 404)
+	throw new ApolloError("ticket not found", 404)
 	if(ticket.redeemed)
-		throw new ApolloError("ticket already redeemed.",400)
+	throw new ApolloError("ticket already redeemed.",400)
 	await Ticket.updateOne(
-		{ "_id" : ticketId },
-		{ $set : { redeemed: true, redeemedAt } }
+	{ "_id" : ticketId },
+	{ $set : { redeemed: true, redeemedAt } }
 	)
 
 	return findOneTicket({id: ticketId})
