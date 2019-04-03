@@ -78,7 +78,7 @@ async function findOneConcert({id}){
         {$match : {_id : Types.ObjectId(id)}},
         {$limit : 1}
 	])
-	concert = concert.shift()
+	concert = await concert.shift()
 	await concert.tickets.forEach( async(ticket) => {
 		ticket.seller = findOneUser({id : ticket.sellerId})
 		if(ticket.buyerId)
@@ -444,9 +444,16 @@ async function buyManyTickets({number,concertId,sellerId,price,userId}){
 	await transaction.save()
 
 	//update buyer in ticket
-	let tickets = await Ticket.find({
-	  concertId,sellerId,price
-	}).limit(number+1)
+	let tickets
+	if(number > 1){
+		tickets = await Ticket.find({
+		  concertId,sellerId,price
+		}).limit(number+1)
+	}else {
+		tickets = await Ticket.find({
+	  		concertId,sellerId,price
+		}).limit(number)
+	}
 
 	await tickets.forEach( async (el) => { 
 	  el.buyerId = payerId
