@@ -413,8 +413,8 @@ async function buyManyTickets({number,concertId,sellerId,price,userId}){
 	let payer = await User.findOne(payerId)
 	let receiver = await User.findOne(receiverId)
 	let amount = price * number
-	let payerWallet = await Wallet.findOne({userId: payerId})
-	if(payerWallet.balance < amount)
+	let payerWallet = await findOneUser({id: payerId})
+	if(payerWallet.wallet.balance < amount)
 		throw new ApolloError("price too high, you cannot overdraw your balance")
 	//checks
 	let seller = await User.findOne(sellerId)
