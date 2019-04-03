@@ -177,7 +177,7 @@ const resolvers = {
     },
 
     async createConcert(_,{title,date,address,genre,type,capacity,artistId},context) {
-      return logic.Concert.insertOne({title,date,address,genre,capacity,artistId,sellerId: context.user.id})
+      return logic.Concert.insertOne({title,date,address,genre,type,capacity,artistId,sellerId: context.user.id})
     },
 
     async createTicket(_,{type,price,concertId,redeemedAt,buyerId},context){

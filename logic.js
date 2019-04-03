@@ -92,7 +92,7 @@ async function findAllConcerts(){
 		{$lookup: { from: 'artists',localField:'artistId',foreignField: '_id',as: 'artist'}},
 		{$unwind: "$artist"},
 		{$lookup: { from: 'tickets', localField: '_id', foreignField: 'concertId' , as : 'tickets' }},
-		{$project: {_id:"$_id",title:"$title",date:"$date",address:"$address",genre:"$genre",capacity:"$capacity",tickets:"$tickets",artist:"$artist",totalTickets:{$size:"$tickets"}}}
+		{$project: {_id:"$_id",title:"$title",date:"$date",address:"$address",genre:"$genre",genre:"$type",capacity:"$capacity",tickets:"$tickets",artist:"$artist",totalTickets:{$size:"$tickets"}}}
 	])
 	await concerts.forEach(	async(concert) => {
 		await concert.tickets.forEach( async(ticket) => {
