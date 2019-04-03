@@ -116,7 +116,7 @@ const typeDefs = gql `
 // Provide resolver functions for your schema fields
 const resolvers = {
   Query: {
-    async me(_, context) {
+    async me(_,{}, context) {
       return await logic.User.findOne({
         id: context.user.id
       })
