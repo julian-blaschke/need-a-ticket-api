@@ -96,7 +96,7 @@ const typeDefs = gql`
     createArtist (name: String!): Artist
     createConcert (title: String!, date: Date!, address: String!, genre: String!,type: String!, capacity: Float!, artistId: ID!): Concert
     createTicket (type: String!, price: Float!,concertId: String!,redeemedAt: Date, buyerId: String): Ticket
-    createTickets (amount: Float!, type: String!, price: Float!, sellerId: String!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
+    createTickets (amount: Float!, type: String!, price: Float!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
     updateUser (email: String, password: String) : User
     buy (ticketId: ID!): Transaction
     buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!): Transaction 
