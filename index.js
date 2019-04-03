@@ -2,15 +2,24 @@ const express = require('express')
 const jwt = require("express-jwt")
 const mongoose = require('mongoose')
 const config = require('./config')
-const { logic } = require('./logic')
-const { ApolloServer, gql, AuthenticationError } = require('apollo-server-express')
-const {makeExecutableSchema, addSchemaLevelResolveFunction} = require('graphql-tools')
+const {
+  logic
+} = require('./logic')
+const {
+  ApolloServer,
+  gql,
+  AuthenticationError
+} = require('apollo-server-express')
+const {
+  makeExecutableSchema,
+  addSchemaLevelResolveFunction
+} = require('graphql-tools')
 
 
 global.config = config
 
 // Construct a schema, using GraphQL schema language
-const typeDefs = gql`
+const typeDefs = gql `
   scalar Date
   type User {
     _id: ID!
@@ -69,7 +78,7 @@ const typeDefs = gql`
     ticket: Ticket!
   }
   type groupedTicket{
-    concert: Concert! 
+    concert: Concert!
     price: Float!
     seller: User!
     type: String!,
@@ -99,131 +108,265 @@ const typeDefs = gql`
     createTickets (amount: Float!, type: String!, price: Float!,concertId: String!,redeemedAt: Date, buyerId: String): [Ticket]
     updateUser (email: String, password: String) : User
     buy (ticketId: ID!): Transaction
-    buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!): Transaction 
+    buyBulk (number: Float!, concertId: ID!, sellerId: ID!, price: Float!): Transaction
     deposit (amount: Float!): Wallet
     redeem (ticketId: String!): Ticket
   }
 `
-
-
-
 // Provide resolver functions for your schema fields
 const resolvers = {
   Query: {
-    async me(_,{},context){
-      return await logic.User.findOne({id:context.user.id})
+    async me(_, context) {
+      return await logic.User.findOne({
+        id: context.user.id
+      })
     },
 
-    async user(_,{id}) {
-      return await logic.User.findOne({id})
+    async user(_, {
+      id
+    }) {
+      return await logic.User.findOne({
+        id
+      })
     },
 
     async users() {
       return await logic.User.find()
     },
 
-    async artist(_,{id}) {
-      return await logic.Artist.findOne({id})
+    async artist(_, {
+      id
+    }) {
+      return await logic.Artist.findOne({
+        id
+      })
     },
 
     async artists() {
       return await logic.Artist.find()
     },
 
-    async concert(_,{id}) {
-      return await logic.Concert.findOne({id})
+    async concert(_, {
+      id
+    }) {
+      return await logic.Concert.findOne({
+        id
+      })
     },
 
-    async concerts(){
+    async concerts() {
       return await logic.Concert.find()
     },
 
-    async ticket(_,{id}){
-      return logic.Ticket.findOne({id})
+    async ticket(_, {
+      id
+    }) {
+      return logic.Ticket.findOne({
+        id
+      })
     },
 
-    async tickets(){
+    async tickets() {
       return logic.Ticket.find()
     },
 
-    async ticketsGrouped(_,{concertId}){
-      return logic.Ticket.findAndGroup({concertId})
+    async ticketsGrouped(_, {
+      concertId
+    }) {
+      return logic.Ticket.findAndGroup({
+        concertId
+      })
     },
 
-    async transaction(_,{id}){
-      return logic.Transaction.findOne({id})  
+    async transaction(_, {
+      id
+    }) {
+      return logic.Transaction.findOne({
+        id
+      })
     },
 
-    async transactions(){
+    async transactions() {
       return logic.Transaction.find()
     },
   },
 
   Mutation: {
-    async signup(_, { username, email, password }) {
-      return logic.User.signup({username,email,password})
+    async signup(_, {
+      username,
+      email,
+      password
+    }) {
+      return logic.User.signup({
+        username,
+        email,
+        password
+      })
     },
 
-    async login(_, { email, password }) {
-      return logic.User.login({email,password})
+    async login(_, {
+      email,
+      password
+    }) {
+      return logic.User.login({
+        email,
+        password
+      })
     },
 
-    async staffLogin(_, { concertId }) {
-      return logic.User.loginStaff({concertId})
+    async staffLogin(_, {
+      concertId
+    }) {
+      return logic.User.loginStaff({
+        concertId
+      })
     },
 
-    async createArtist(_, {name}) {
-      return logic.Artist.insertOne({name})
+    async createArtist(_, {
+      name
+    }) {
+      return logic.Artist.insertOne({
+        name
+      })
     },
 
-    async createConcert(_,{title,date,address,genre,type,capacity,artistId},context) {
-      return logic.Concert.insertOne({title,date,address,genre,type,capacity,artistId,sellerId: context.user.id})
+    async createConcert(_, {
+      title,
+      date,
+      address,
+      genre,
+      type,
+      capacity,
+      artistId
+    }, context) {
+      return logic.Concert.insertOne({
+        title,
+        date,
+        address,
+        genre,
+        type,
+        capacity,
+        artistId,
+        sellerId: context.user.id
+      })
     },
 
-    async createTicket(_,{type,price,concertId,redeemedAt,buyerId},context){
-      return await logic.Ticket.insertOne({type,price,concertId,redeemedAt,buyerId,sellerId: context.user.id})
+    async createTicket(_, {
+      type,
+      price,
+      concertId,
+      redeemedAt,
+      buyerId
+    }, context) {
+      return await logic.Ticket.insertOne({
+        type,
+        price,
+        concertId,
+        redeemedAt,
+        buyerId,
+        sellerId: context.user.id
+      })
     },
 
-    async createTickets(_,{amount,type,price,concertId,redeemedAt,buyerId},context){
-      return logic.Ticket.insertMany({amount,type,price,concertId,redeemedAt,buyerId,sellerId: context.user.id})
+    async createTickets(_, {
+      amount,
+      type,
+      price,
+      concertId,
+      redeemedAt,
+      buyerId
+    }, context) {
+      return logic.Ticket.insertMany({
+        amount,
+        type,
+        price,
+        concertId,
+        redeemedAt,
+        buyerId,
+        sellerId: context.user.id
+      })
     },
 
-    async updateUser(_,{email,password},context){
-      return logic.User.updateOne({email,password,userId:context.user.id})
+    async updateUser(_, {
+      email,
+      password
+    }, context) {
+      return logic.User.updateOne({
+        email,
+        password,
+        userId: context.user.id
+      })
     },
 
-    async buy(_,{ticketId},context){
-      return logic.Ticket.buyOne({ticketId,userId: context.user.id})
+    async buy(_, {
+      ticketId
+    }, context) {
+      return logic.Ticket.buyOne({
+        ticketId,
+        userId: context.user.id
+      })
     },
 
-    async buyBulk(_,{number,concertId,sellerId,price},context){
-      return logic.Ticket.buyMany({number,concertId,sellerId,price,userId:context.user.id})
+    async buyBulk(_, {
+      number,
+      concertId,
+      sellerId,
+      price
+    }, context) {
+      return logic.Ticket.buyMany({
+        number,
+        concertId,
+        sellerId,
+        price,
+        userId: context.user.id
+      })
     },
 
-    async deposit(_,{amount},context){
-      return logic.User.deposit({amount,userId:context.user.id})
+    async deposit(_, {
+      amount
+    }, context) {
+      return logic.User.deposit({
+        amount,
+        userId: context.user.id
+      })
     },
 
-    async redeem(_,{ticketId},context){
-      return logic.Ticket.redeemOne({ticketId,user: context.user})
+    async redeem(_, {
+      ticketId
+    }, context) {
+      return logic.Ticket.redeemOne({
+        ticketId,
+        user: context.user
+      })
     }
 
   }
 }
 
 //database
-mongoose.connect('mongodb://julian-blaschke:Julian1999@ds247001.mlab.com:47001/need-a-ticket', {useNewUrlParser: true})
+mongoose.connect('mongodb://julian-blaschke:Julian1999@ds247001.mlab.com:47001/need-a-ticket', {
+  useNewUrlParser: true
+})
 
 //auth exception middleware
-const schema = makeExecutableSchema({typeDefs, resolvers})
+const schema = makeExecutableSchema({
+  typeDefs,
+  resolvers
+})
 addSchemaLevelResolveFunction(schema, (root, args, context, info) => {
-  if(!context.user)
-    if(info.fieldName !== 'login' && info.fieldName !== 'signup' && info.fieldName !== "staffLogin")
-      throw new AuthenticationError("not authenticated.")  
+  if (!context.user)
+    if (info.fieldName !== 'login' && info.fieldName !== 'signup' && info.fieldName !== "staffLogin")
+      throw new AuthenticationError("not authenticated.")
 })
 
 //create apollo server
-const server = new ApolloServer({ schema, introspection: true, playground: true, context: ({ req }) => ({
+const server = new ApolloServer({
+  schema,
+  introspection: true,
+  playground: true,
+  context: ({
+    req
+  }) => ({
     user: req.user
   })
 })
@@ -240,8 +383,12 @@ const auth = jwt({
 //apply middleware
 app.use(auth)
 
-server.applyMiddleware({ app })
+server.applyMiddleware({
+  app
+})
 
-app.listen({ port: process.env.PORT || 4000 }, () =>
-  console.log(`🚀 Server ready at http://localhost:4000${server.graphqlPath}`)
+app.listen({
+    port: process.env.PORT || 4000
+  }, () =>
+  console.log(`🚀 need-ticket-api up and running.`)
 )
