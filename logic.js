@@ -769,10 +769,7 @@ async function insertOneConcert({
     artistId,
     sellerId
   })
-  await concert.save((err) => {
-    if (err)
-      throw err
-  })
+  await concert.save()
   return await findOneConcert({
     id: concert._id.toString()
   })
