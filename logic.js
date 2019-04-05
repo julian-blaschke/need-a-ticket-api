@@ -163,6 +163,7 @@ async function findOneConcert({
         date: "$date",
         address: "$address",
         genre: "$genre",
+        type: "$type",
         capacity: "$capacity",
         tickets: "$tickets",
         artist: "$artist",
