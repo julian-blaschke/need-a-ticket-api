@@ -231,17 +231,15 @@ async function findAllConcerts() {
       }
     }
   ])
-  await concerts.forEach(async (concert) => {
-    await concert.tickets.forEach(async (ticket) => {
-      ticket.seller = await findOneUser({
-        id: ticket.sellerId
-      })
+
+  for (let concert of concerts) {
+    for(let ticket of concert.tickets){
+      ticket.seller = await User.findOne(ticket.sellerId)
       if (ticket.buyerId)
-        ticket.buyer = await findOneUser({
-          id: ticket.buyerId
-        })
-    })
-  })
+        ticket.buyer = await User.findOne(ticket.buyerId)
+    }
+  }
+
   return concerts
 }
 //		find an ticket and aggregate it
